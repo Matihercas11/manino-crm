@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --m-app: #F9F7F2;
+  --m-sidebar: #EFECE5;
+  --m-card: #FFFFFF;
+  --m-ink: #2C2420;
+  --m-ink-2: #70655C;
+  --m-muted: #A39891;
+  --m-border: #E6E2DA;
+  --m-terracotta: #9C4936;
+  --m-terracotta-dark: #803A2A;
+  --m-sage: #8A9A83;
+  --m-sage-dark: #71806A;
+  --m-warning: #D4A373;
+  --m-danger: #B85C4F;
+}
+
+@layer base {
+  :root {
+    --background: 40 33% 96%;
+    --foreground: 16 15% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 16 15% 16%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 16 15% 16%;
+    --primary: 11 49% 41%;
+    --primary-foreground: 40 33% 96%;
+    --secondary: 40 20% 91%;
+    --secondary-foreground: 16 15% 16%;
+    --muted: 40 20% 91%;
+    --muted-foreground: 24 10% 40%;
+    --accent: 100 10% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 8 42% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 36 20% 87%;
+    --input: 36 20% 87%;
+    --ring: 11 49% 41%;
+    --radius: 0.25rem;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background-color: var(--m-app);
+  color: var(--m-ink);
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, .mono, .tabular {
+  font-family: 'IBM Plex Mono', Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-serif { font-family: 'Cormorant Garamond', serif; }
+.font-mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+@layer base {
+  * { border-color: var(--m-border); }
+  h1, h2, h3, h4 { font-family: 'Cormorant Garamond', serif; color: var(--m-ink); letter-spacing: -0.01em; }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D8D2C7; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #C2B9AC; }
+::selection { background: var(--m-terracotta); color: #fff; }
+
+.stagger-in > * { opacity: 0; transform: translateY(6px); animation: staggerIn .32s ease forwards; }
+.stagger-in > *:nth-child(1) { animation-delay: .02s; }
+.stagger-in > *:nth-child(2) { animation-delay: .06s; }
+.stagger-in > *:nth-child(3) { animation-delay: .10s; }
+.stagger-in > *:nth-child(4) { animation-delay: .14s; }
+.stagger-in > *:nth-child(5) { animation-delay: .18s; }
+.stagger-in > *:nth-child(6) { animation-delay: .22s; }
+.stagger-in > *:nth-child(7) { animation-delay: .26s; }
+.stagger-in > *:nth-child(8) { animation-delay: .30s; }
+
+@keyframes staggerIn { to { opacity: 1; transform: translateY(0); } }
+
+.hover-card:hover { transform: translateY(-2px); transition: transform .2s ease; }
+.card-base { background: var(--m-card); border: 1px solid var(--m-border); border-radius: 4px; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; color: var(--m-ink-2); font-weight: 600; }
