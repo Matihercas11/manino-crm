@@ -1,9 +1,150 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, formatCRC } from "@/lib/api";
+import { api, formatCRC, formatDateTime } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Search, Plus, Minus, Trash2, UserPlus, Coffee, Check } from "lucide-react";
+import { Search, Plus, Minus, Trash2, UserPlus, Coffee, Check, FileText, X } from "lucide-react";
+
+export function generateInvoicePDF(order, client) {
+  const logoUrl = `${window.location.origin}/logo.png`;
+  const items = order.items.map(it => `
+    <tr>
+      <td style="padding:10px 8px;border-bottom:1px solid #EFEBE3">${it.product_name}</td>
+      <td style="padding:10px 8px;text-align:center;border-bottom:1px solid #EFEBE3;font-family:'Courier New',monospace">${it.quantity}</td>
+      <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #EFEBE3;font-family:'Courier New',monospace">${formatCRC(it.unit_price)}</td>
+      <td style="padding:10px 8px;text-align:right;border-bottom:1px solid #EFEBE3;font-family:'Courier New',monospace;font-weight:600">${formatCRC(it.subtotal)}</td>
+    </tr>`).join("");
+
+  const clientLines = client ? [
+    client.business_name,
+    client.contact_name,
+    client.phone,
+    client.email,
+    client.location,
+  ].filter(Boolean) : [order.client_name];
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Factura · Manino Coffee · ${order.client_name}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Georgia',serif;color:#2C2420;max-width:800px;margin:0 auto;padding:40px;background:#fff}
+    .header{display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:24px;border-bottom:2px solid #2C2420;margin-bottom:32px}
+    .brand{display:flex;align-items:center;gap:16px}
+    .brand img{width:80px;height:80px;object-fit:contain}
+    .brand-text h1{font-size:32px;font-weight:700;letter-spacing:-0.5px;line-height:1}
+    .brand-text p{font-size:10px;letter-spacing:3px;color:#9C4936;margin-top:6px;text-transform:uppercase;font-family:'IBM Plex Mono',monospace}
+    .doc-meta{text-align:right;font-size:12px}
+    .doc-meta .label{font-size:9px;letter-spacing:2px;color:#8A8079;text-transform:uppercase;margin-bottom:4px}
+    .doc-meta h2{font-size:20px;font-weight:600;margin-bottom:12px;letter-spacing:-0.3px}
+    .doc-meta .date{font-family:'IBM Plex Mono',monospace;color:#5C5249;font-size:11px}
+    .doc-meta .id{font-family:'IBM Plex Mono',monospace;color:#9C4936;font-size:10px;margin-top:6px}
+    .section{margin:24px 0}
+    .section-title{font-size:9px;letter-spacing:3px;color:#9C4936;text-transform:uppercase;margin-bottom:10px;font-family:'IBM Plex Mono',monospace}
+    .client-card{padding:18px;background:#F8F4ED;border-left:3px solid #9C4936}
+    .client-card .name{font-size:16px;font-weight:600;margin-bottom:6px}
+    .client-card .meta{font-size:12px;color:#5C5249;line-height:1.7}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    thead tr{background:#2C2420;color:#fff}
+    th{padding:12px 8px;text-align:left;font-size:10px;letter-spacing:2px;text-transform:uppercase;font-family:'IBM Plex Mono',monospace;font-weight:500}
+    th:nth-child(2){text-align:center}
+    th:nth-child(3),th:nth-child(4){text-align:right}
+    .total-section{margin-top:24px;display:flex;justify-content:flex-end}
+    .total-box{min-width:260px;padding:16px 20px;background:#9C4936;color:#fff}
+    .total-box .label{font-size:9px;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;opacity:0.85}
+    .total-box .amount{font-size:28px;font-weight:700;font-family:'IBM Plex Mono',monospace;letter-spacing:-0.5px}
+    .badges{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+    .badge{display:inline-block;padding:6px 14px;font-size:10px;font-weight:600;letter-spacing:2px;text-transform:uppercase;font-family:'IBM Plex Mono',monospace}
+    .b-entregado{background:#E8DBD6;color:#6B2D20}
+    .b-pendiente{background:#F4E9D8;color:#8A5A1F}
+    .b-pagado{background:#EFF6F4;color:#4A7C6F}
+    .b-cobrar{background:#F4E9D8;color:#8A5A1F}
+    .footer{margin-top:60px;padding-top:24px;border-top:1px solid #EFEBE3;text-align:center}
+    .footer .pay{font-size:13px;font-weight:600;color:#2C2420;margin-bottom:8px}
+    .footer .pay strong{color:#9C4936;font-family:'IBM Plex Mono',monospace;letter-spacing:1px}
+    .footer .thanks{font-size:10px;color:#8A8079;letter-spacing:2px;text-transform:uppercase;margin-top:14px;font-family:'IBM Plex Mono',monospace}
+    .actions{margin-top:36px;display:flex;gap:12px;justify-content:center}
+    .btn{padding:12px 24px;font-size:13px;font-weight:600;cursor:pointer;border:none;letter-spacing:1px;font-family:inherit}
+    .btn-primary{background:#9C4936;color:#fff}
+    .btn-secondary{background:transparent;color:#5C5249;border:1px solid #E6E2DA}
+    @media print{
+      body{padding:24px}
+      .actions{display:none}
+      .footer{margin-top:40px}
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <img src="${logoUrl}" alt="Manino" onerror="this.style.display='none'" />
+      <div class="brand-text">
+        <h1>Manino</h1>
+        <p>Coffee · Dealer · Curator</p>
+      </div>
+    </div>
+    <div class="doc-meta">
+      <div class="label">Factura</div>
+      <h2>Comprobante de venta</h2>
+      <div class="date">${formatDateTime(order.created_at)}</div>
+      <div class="id">№ ${order.id.slice(0, 8).toUpperCase()}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Facturado a</div>
+    <div class="client-card">
+      <div class="name">${clientLines[0] || order.client_name}</div>
+      ${clientLines.slice(1).length > 0 ? `<div class="meta">${clientLines.slice(1).join(" · ")}</div>` : ""}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Detalle</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Producto</th>
+          <th>Cant.</th>
+          <th>P/U</th>
+          <th>Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>${items}</tbody>
+    </table>
+  </div>
+
+  <div class="total-section">
+    <div class="total-box">
+      <div class="label">Total a cancelar</div>
+      <div class="amount">${formatCRC(order.total)}</div>
+    </div>
+  </div>
+
+  <div class="badges">
+    <span class="badge ${order.status === "entregado" ? "b-entregado" : "b-pendiente"}">Entrega: ${order.status === "entregado" ? "Entregado" : "Pendiente"}</span>
+    <span class="badge ${order.paid ? "b-pagado" : "b-cobrar"}">Cobro: ${order.paid ? "Pagado" : "No cobrado"}</span>
+  </div>
+
+  ${order.notes ? `<div class="section"><div class="section-title">Notas</div><p style="font-size:12px;color:#5C5249;line-height:1.6">${order.notes}</p></div>` : ""}
+
+  <div class="footer">
+    <div class="pay">Sinpe Móvil: <strong>8406-4260</strong> — Matías Hernández Castillo</div>
+    <div class="thanks">Gracias por su preferencia · Manino Coffee</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" onclick="window.print()">Descargar PDF / Imprimir</button>
+    <button class="btn btn-secondary" onclick="window.close()">Cerrar</button>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=860,height=900");
+  if (win) { win.document.write(html); win.document.close(); }
+}
 
 export default function POS() {
   const navigate = useNavigate();
@@ -15,9 +156,11 @@ export default function POS() {
   const [newClient, setNewClient] = useState({ business_name: "", contact_name: "", phone: "", email: "", location: "", client_type: "Particular" });
   const [productQuery, setProductQuery] = useState("");
   const [cart, setCart] = useState([]);
-  const [status, setStatus] = useState("pendiente");
+  const [delivery, setDelivery] = useState("pendiente"); // pendiente | entregado
+  const [payment, setPayment] = useState("no_cobrado");  // pagado | no_cobrado
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [invoicePrompt, setInvoicePrompt] = useState(null); // {order, client} | null
 
   const load = async () => {
     const [c, p] = await Promise.all([api.get("/clients"), api.get("/products")]);
@@ -78,15 +221,31 @@ export default function POS() {
     if (cart.length === 0) { toast.error("Agrega al menos un producto"); return; }
     setSubmitting(true);
     try {
-      await api.post("/orders", {
+      const r = await api.post("/orders", {
         client_id: clientId,
         items: cart.map(x => ({ product_id: x.product_id, quantity: x.quantity })),
-        status, notes,
+        status: delivery,
+        paid: payment === "pagado",
+        notes,
       });
       toast.success("Compra registrada · inventario actualizado");
-      setCart([]); setNotes(""); await load(); navigate("/pedidos");
+      const order = r.data;
+      const client = clients.find(c => c.id === clientId);
+      setInvoicePrompt({ order, client });
+      setCart([]); setNotes(""); await load();
     } catch (e) { toast.error(e.response?.data?.detail || "Error al crear pedido"); }
     finally { setSubmitting(false); }
+  };
+
+  const handleGenerateInvoice = () => {
+    if (invoicePrompt) generateInvoicePDF(invoicePrompt.order, invoicePrompt.client);
+    setInvoicePrompt(null);
+    navigate("/pedidos");
+  };
+
+  const handleSkipInvoice = () => {
+    setInvoicePrompt(null);
+    navigate("/pedidos");
   };
 
   return (
@@ -227,12 +386,43 @@ export default function POS() {
               </div>
             </div>
             <div className="mt-5 space-y-3">
-              <F label="Estado inicial">
-                <select value={status} onChange={e => setStatus(e.target.value)} className="m-input">
-                  <option value="pendiente">Pendiente</option>
-                  <option value="en_proceso">En proceso</option>
-                  <option value="entregado">Entregado</option>
-                </select>
+              <F label="Estado de entrega">
+                <div className="flex gap-2">
+                  {[
+                    { v: "pendiente", label: "Pendiente", color: "#D4A373" },
+                    { v: "entregado", label: "Entregado", color: "#9C4936" },
+                  ].map(s => (
+                    <button key={s.v} onClick={() => setDelivery(s.v)}
+                      className="flex-1 px-3 py-2 text-xs rounded-sm border transition-colors"
+                      style={{
+                        borderColor: delivery === s.v ? s.color : "var(--m-border)",
+                        color: delivery === s.v ? "#fff" : "var(--m-ink-2)",
+                        background: delivery === s.v ? s.color : "transparent",
+                        fontWeight: delivery === s.v ? 600 : 400,
+                      }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </F>
+              <F label="Estado de cobro">
+                <div className="flex gap-2">
+                  {[
+                    { v: "no_cobrado", label: "No cobrado", bg: "#F4E9D8", fg: "#8A5A1F" },
+                    { v: "pagado", label: "Pagado", bg: "#4A7C6F", fg: "#fff" },
+                  ].map(s => (
+                    <button key={s.v} onClick={() => setPayment(s.v)}
+                      className="flex-1 px-3 py-2 text-xs rounded-sm border transition-colors"
+                      style={{
+                        borderColor: payment === s.v ? s.bg : "var(--m-border)",
+                        color: payment === s.v ? s.fg : "var(--m-ink-2)",
+                        background: payment === s.v ? s.bg : "transparent",
+                        fontWeight: payment === s.v ? 600 : 400,
+                      }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
               </F>
               <F label="Notas (opcional)"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="m-input resize-none" /></F>
             </div>
@@ -243,6 +433,39 @@ export default function POS() {
           </div>
         </aside>
       </div>
+
+      {invoicePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(44,36,32,0.4)" }}>
+          <div className="bg-white rounded-sm max-w-md w-full p-8" style={{ border: "1px solid var(--m-border)" }}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 flex items-center justify-center rounded-sm flex-shrink-0" style={{ background: "var(--m-sidebar)" }}>
+                <FileText className="w-5 h-5" style={{ color: "var(--m-terracotta)" }} />
+              </div>
+              <div className="flex-1">
+                <div className="eyebrow">Compra registrada</div>
+                <h3 className="font-serif text-xl mt-1">¿Generar factura?</h3>
+              </div>
+              <button onClick={handleSkipInvoice} className="p-1.5 rounded-sm" style={{ color: "var(--m-ink-2)" }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm mb-6" style={{ color: "var(--m-ink-2)" }}>
+              Se abrirá la factura en una pestaña nueva. Desde ahí podés descargar como PDF, imprimir o solo verla.
+            </p>
+            <div className="space-y-2">
+              <button onClick={handleGenerateInvoice}
+                className="w-full py-2.5 rounded-sm text-sm font-medium text-white" style={{ background: "var(--m-terracotta)" }}>
+                Generar factura PDF
+              </button>
+              <button onClick={handleSkipInvoice}
+                className="w-full py-2.5 rounded-sm text-sm border" style={{ borderColor: "var(--m-border)", color: "var(--m-ink-2)" }}>
+                Omitir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`.m-input{width:100%;background:transparent;border:none;border-bottom:1px solid var(--m-border);padding:6px 0;font-size:14px;outline:none;font-family:inherit;color:var(--m-ink)}.m-input:focus{border-bottom-color:var(--m-terracotta)}`}</style>
     </div>
   );

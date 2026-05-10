@@ -25,9 +25,9 @@ export const formatDateTime = (iso) => {
   });
 };
 
-export const STATUS_LABEL = { pendiente: "Pendiente", en_proceso: "En proceso", entregado: "Entregado" };
+export const STATUS_LABEL = { pendiente: "Pendiente", entregado: "Entregado", en_proceso: "Pendiente" };
 export const STATUS_COLOR = {
   pendiente:  { bg: "#F4E9D8", fg: "#8A5A1F" },
-  en_proceso: { bg: "#E7ECE3", fg: "#4E5B46" },
   entregado:  { bg: "#E8DBD6", fg: "#6B2D20" },
+  en_proceso: { bg: "#F4E9D8", fg: "#8A5A1F" }, // legacy fallback
 };

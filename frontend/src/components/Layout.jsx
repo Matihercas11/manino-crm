@@ -1,12 +1,16 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Package, ClipboardList, TrendingUp, Coffee, ShoppingCart } from "lucide-react";
+import { LayoutDashboard, Users, Package, ClipboardList, TrendingUp, Coffee, ShoppingCart, Truck, MapPin, Building2, Receipt } from "lucide-react";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/pos", label: "Nueva compra", icon: ShoppingCart },
   { to: "/clientes", label: "Clientes", icon: Users },
   { to: "/pedidos", label: "Pedidos", icon: ClipboardList },
+  { to: "/entregas", label: "Entregas", icon: MapPin },
   { to: "/inventario", label: "Inventario", icon: Package },
+  { to: "/mercaderia", label: "Mercadería", icon: Truck },
+  { to: "/proveedores", label: "Proveedores", icon: Building2 },
+  { to: "/gastos", label: "Gastos", icon: Receipt },
   { to: "/analisis", label: "Análisis", icon: TrendingUp },
 ];
 
@@ -27,7 +31,7 @@ export default function Layout() {
             </div>
           </div>
         </div>
-        <div className="px-4 pt-2">
+        <div className="px-4 pt-2 flex-1 overflow-y-auto">
           <div className="eyebrow px-3 pb-2">Operaciones</div>
           <nav className="flex flex-col gap-0.5">
             {NAV.map(({ to, label, icon: Icon, end }) => (
@@ -41,7 +45,7 @@ export default function Layout() {
             ))}
           </nav>
         </div>
-        <div className="mt-auto px-6 py-6" style={{ borderTop: "1px solid var(--m-border)" }}>
+        <div className="px-6 py-6" style={{ borderTop: "1px solid var(--m-border)" }}>
           <button onClick={() => navigate("/pos")}
             className="w-full text-sm py-2.5 px-3 rounded-sm transition-colors text-white font-medium"
             style={{ background: "var(--m-terracotta)" }}>+ Registrar compra</button>

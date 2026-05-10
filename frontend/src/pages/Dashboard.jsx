@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { api, formatCRC } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { api, formatCRC, formatDate } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Coffee, AlertTriangle } from "lucide-react";
+import { ArrowUpRight, Coffee, AlertTriangle, AlertCircle, Target, Edit3, Check, X, TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 const Kpi = ({ label, value, hint }) => (
   <div className="card-base p-6 hover-card">
@@ -13,17 +13,100 @@ const Kpi = ({ label, value, hint }) => (
   </div>
 );
 
+function GoalCard({ totalSales }) {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [target, setTarget] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState("");
+
+  useEffect(() => {
+    api.get(`/settings/goals?month=${month}`)
+      .then(r => { setTarget(r.data.target || 0); setInputVal(String(r.data.target || "")); })
+      .catch(() => {});
+  }, [month]);
+
+  const save = async () => {
+    const val = Number(inputVal) || 0;
+    await api.put("/settings/goals", { month, target: val });
+    setTarget(val);
+    setEditing(false);
+  };
+
+  const pct = target > 0 ? Math.min(Math.round((totalSales / target) * 100), 100) : 0;
+  const monthLabel = now.toLocaleDateString("es-CR", { month: "long", year: "numeric" });
+  const over = target > 0 && totalSales >= target;
+
+  return (
+    <div className="card-base p-6">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4" style={{ color: "var(--m-terracotta)" }} />
+          <div className="eyebrow">Meta mensual · {monthLabel}</div>
+        </div>
+        {!editing && (
+          <button onClick={() => { setInputVal(String(target || "")); setEditing(true); }}
+            className="p-1.5 rounded-sm hover:bg-[color:var(--m-sidebar)]">
+            <Edit3 className="w-3.5 h-3.5" style={{ color: "var(--m-ink-2)" }} />
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-sm">₡</span>
+          <input type="number" value={inputVal} onChange={e => setInputVal(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && save()}
+            className="flex-1 bg-transparent border-b outline-none font-mono text-lg py-1"
+            style={{ borderColor: "var(--m-terracotta)" }}
+            autoFocus placeholder="500000" />
+          <button onClick={save} className="p-1.5 rounded-sm" style={{ color: "#4A7C6F" }}><Check className="w-4 h-4" /></button>
+          <button onClick={() => setEditing(false)} className="p-1.5 rounded-sm" style={{ color: "var(--m-muted)" }}><X className="w-4 h-4" /></button>
+        </div>
+      ) : target === 0 ? (
+        <button onClick={() => setEditing(true)}
+          className="mt-3 text-sm underline" style={{ color: "var(--m-ink-2)" }}>
+          + Definir meta para este mes
+        </button>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-2xl" style={{ color: over ? "#4A7C6F" : "var(--m-ink)" }}>
+              {formatCRC(totalSales)}
+            </span>
+            <span className="text-sm" style={{ color: "var(--m-ink-2)" }}>de {formatCRC(target)}</span>
+          </div>
+          <div className="h-2 w-full rounded-full overflow-hidden" style={{ background: "#EFEBE3" }}>
+            <div className="h-2 rounded-full transition-all duration-500"
+              style={{ width: `${pct}%`, background: over ? "#4A7C6F" : "var(--m-terracotta)" }} />
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span style={{ color: over ? "#4A7C6F" : "var(--m-ink-2)" }}>
+              {over ? "¡Meta alcanzada!" : `Falta ${formatCRC(target - totalSales)}`}
+            </span>
+            <span className="font-mono font-medium"
+              style={{ color: over ? "#4A7C6F" : "var(--m-terracotta)" }}>{pct}%</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   useEffect(() => { api.get("/dashboard/stats").then((r) => setStats(r.data)); }, []);
   if (!stats) return <div className="p-12 text-sm" style={{ color: "var(--m-ink-2)" }}>Cargando panel…</div>;
 
-  const { kpis, trend_14d, top_clients, top_products, low_stock, status_counts } = stats;
+  const { kpis, trend_14d, top_clients, top_products, low_stock, status_counts, morosos,
+          expenses = { cancelled_total: 0, pending_total: 0 },
+          balance = { net_profit: 0, salary_10: 0, funds_20: 0, reinvest_70: 0 },
+          monthly_balance = [] } = stats;
 
   return (
     <div>
       <PageHeader eyebrow="Panel operativo" title="Buen día, Manino."
-        subtitle="Vista en tiempo real del negocio — ventas, pedidos y curaduría del inventario."
+        subtitle="Vista en tiempo real del negocio — ventas cobradas, pedidos y curaduría del inventario."
         actions={
           <Link to="/pos" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-sm text-sm font-medium text-white"
             style={{ background: "var(--m-terracotta)" }}>
@@ -31,18 +114,69 @@ export default function Dashboard() {
           </Link>
         } />
       <div className="px-8 lg:px-12 py-10 space-y-10">
+
+        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger-in">
-          <Kpi label="Ventas totales" value={formatCRC(kpis.total_sales)} hint={`Últimos 30 días · ${formatCRC(kpis.sales_30d)}`} />
-          <Kpi label="Pedidos totales" value={kpis.total_orders} hint={`${kpis.orders_30d} en 30d`} />
-          <Kpi label="Ticket promedio" value={formatCRC(kpis.avg_ticket)} />
+          <Kpi label="Ventas cobradas" value={formatCRC(kpis.total_sales)}
+            hint={`Últimos 30d · ${formatCRC(kpis.sales_30d)} · solo pagados`} />
+          <Kpi label="Pedidos totales" value={kpis.total_orders} hint={`${kpis.orders_30d} pagados en 30d`} />
+          <Kpi label="Ticket promedio" value={formatCRC(kpis.avg_ticket)} hint="Sobre pedidos pagados" />
           <Kpi label="Clientes" value={kpis.total_clients} hint={`Catálogo · ${kpis.total_products} productos`} />
         </div>
+
+        {/* Meta mensual */}
+        <GoalCard totalSales={kpis.total_sales} />
+
+        {/* Balance general */}
+        <BalanceSection
+          totalSales={kpis.total_sales}
+          expenses={expenses}
+          balance={balance}
+          monthly={monthly_balance}
+        />
+
+        {/* Alerta morosos */}
+        {morosos.length > 0 && (
+          <div className="rounded-sm border p-5" style={{ borderColor: "#C0392B", background: "#FDF2F2" }}>
+            <div className="flex items-center gap-2 mb-3">
+              <AlertCircle className="w-5 h-5" style={{ color: "#C0392B" }} />
+              <span className="font-medium text-sm" style={{ color: "#C0392B" }}>
+                {morosos.length} cliente{morosos.length > 1 ? "s" : ""} con deuda vencida (+7 días)
+              </span>
+            </div>
+            <ul className="divide-y" style={{ borderColor: "#F5C6C6" }}>
+              {morosos.map((m) => (
+                <li key={m.order_id} className="py-2.5 flex items-center justify-between">
+                  <div>
+                    <Link to={`/clientes/${m.client_id}`}
+                      className="text-sm font-medium hover:underline" style={{ color: "#7B241C" }}>
+                      {m.client_name}
+                    </Link>
+                    <div className="text-xs mt-0.5" style={{ color: "#922B21" }}>
+                      Entregado hace {m.days_overdue} días · {formatDate(m.delivered_at)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono text-sm font-medium" style={{ color: "#7B241C" }}>
+                      {formatCRC(m.total)}
+                    </div>
+                    <Link to="/pedidos" className="text-[10px] underline" style={{ color: "#922B21" }}>
+                      ver pedido
+                    </Link>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Gráfica + Estado pedidos */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 card-base p-6">
             <div className="flex items-baseline justify-between mb-6">
               <div>
                 <div className="eyebrow">Tendencia · 14 días</div>
-                <div className="font-serif text-2xl mt-1">Ventas diarias</div>
+                <div className="font-serif text-2xl mt-1">Ventas cobradas diarias</div>
               </div>
               <div className="font-mono text-sm" style={{ color: "var(--m-ink-2)" }}>
                 Σ {formatCRC(trend_14d.reduce((a, b) => a + b.sales, 0))}
@@ -71,10 +205,13 @@ export default function Dashboard() {
                 { k: "pendiente", label: "Pendientes", color: "#D4A373" },
                 { k: "en_proceso", label: "En proceso", color: "#8A9A83" },
                 { k: "entregado", label: "Entregados", color: "#9C4936" },
+                { k: "paid", label: "Pagados", color: "#4A7C6F" },
               ].map((s) => {
                 const count = status_counts[s.k] || 0;
-                const total = Object.values(status_counts).reduce((a, b) => a + b, 0) || 1;
-                const pct = Math.round((count / total) * 100);
+                const base = s.k === "paid"
+                  ? kpis.total_orders
+                  : (status_counts.pendiente + status_counts.en_proceso + status_counts.entregado) || 1;
+                const pct = Math.round((count / (base || 1)) * 100);
                 return (
                   <div key={s.k}>
                     <div className="flex items-baseline justify-between mb-1.5">
@@ -90,11 +227,14 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Top clientes + productos + stock */}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="card-base p-6">
             <div className="eyebrow">Clientes frecuentes</div>
             <h3 className="font-serif text-xl mt-1 mb-4">Top compradores</h3>
-            {top_clients.length === 0 ? <p className="text-sm" style={{ color: "var(--m-ink-2)" }}>Aún sin ventas registradas.</p> :
+            {top_clients.length === 0 ? <p className="text-sm" style={{ color: "var(--m-ink-2)" }}>Aún sin ventas cobradas.</p> :
               <ul className="divide-y" style={{ borderColor: "var(--m-border)" }}>
                 {top_clients.map((c, i) => (
                   <li key={c.client_id} className="py-3 flex items-center justify-between">
@@ -147,6 +287,188 @@ export default function Dashboard() {
               </ul>}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function BalanceSection({ totalSales, expenses, balance, monthly }) {
+  const [view, setView] = useState("current"); // current | history
+  const formatMonthLabel = (key) => {
+    if (!key) return "";
+    const [y, m] = key.split("-");
+    return new Date(Number(y), Number(m) - 1).toLocaleDateString("es-CR", { month: "short", year: "numeric" });
+  };
+
+  const currentMonthKey = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+  const currentMonth = monthly.find(m => m.month === currentMonthKey);
+
+  const breakdown = [
+    { label: "Salario (10%)", value: balance.salary_10, color: "#4A7C6F", pct: 10 },
+    { label: "Fondos (20%)", value: balance.funds_20, color: "#8A9A83", pct: 20 },
+    { label: "Reinversión (70%)", value: balance.reinvest_70, color: "#9C4936", pct: 70 },
+  ];
+
+  const positiveMonths = monthly.filter(m => m.sales > 0 || m.expenses > 0);
+
+  return (
+    <div className="card-base p-6">
+      <div className="flex items-end justify-between mb-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Wallet className="w-4 h-4" style={{ color: "var(--m-terracotta)" }} />
+            <div className="eyebrow">Balance general</div>
+          </div>
+          <h2 className="font-serif text-2xl">Ganancia neta</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--m-ink-2)" }}>
+            Ingresos cobrados − gastos cancelados. Gastos pendientes no afectan este cálculo.
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setView("current")}
+            className="px-3 py-1.5 text-xs rounded-sm border"
+            style={{
+              borderColor: view === "current" ? "var(--m-terracotta)" : "var(--m-border)",
+              color: view === "current" ? "var(--m-terracotta)" : "var(--m-ink-2)",
+              background: view === "current" ? "#FFF" : "transparent",
+            }}>
+            Vista actual
+          </button>
+          <button onClick={() => setView("history")}
+            className="px-3 py-1.5 text-xs rounded-sm border"
+            style={{
+              borderColor: view === "history" ? "var(--m-terracotta)" : "var(--m-border)",
+              color: view === "history" ? "var(--m-terracotta)" : "var(--m-ink-2)",
+              background: view === "history" ? "#FFF" : "transparent",
+            }}>
+            Historial mensual
+          </button>
+        </div>
+      </div>
+
+      {view === "current" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <div className="grid grid-cols-3 gap-3">
+              <BalanceTile label="Ingresos cobrados" value={totalSales} color="#4A7C6F" Icon={TrendingUp} />
+              <BalanceTile label="Gastos cancelados" value={expenses.cancelled_total} color="#9C4936" Icon={TrendingDown} negative />
+              <BalanceTile label="Ganancia neta" value={balance.net_profit}
+                color={balance.net_profit >= 0 ? "#2C2420" : "#C0392B"} bold />
+            </div>
+            {expenses.pending_total > 0 && (
+              <div className="mt-3 p-2.5 rounded-sm text-xs flex items-center gap-2"
+                style={{ background: "#FFF8E8", border: "1px solid #F4E9D8", color: "#8A5A1F" }}>
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{formatCRC(expenses.pending_total)} en gastos pendientes (no descontados)</span>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-sm p-5" style={{ background: "var(--m-sidebar)", border: "1px solid var(--m-border)" }}>
+            <div className="eyebrow mb-3">Desglose 10 / 20 / 70</div>
+            <div className="space-y-2.5">
+              {breakdown.map(b => (
+                <div key={b.label}>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ background: b.color }} />
+                      <span className="text-sm">{b.label}</span>
+                    </div>
+                    <span className="font-mono text-sm font-medium" style={{ color: b.color }}>
+                      {formatCRC(b.value)}
+                    </span>
+                  </div>
+                  <div className="h-1 w-full" style={{ background: "#EFEBE3" }}>
+                    <div className="h-1" style={{ width: `${b.pct}%`, background: b.color }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {balance.net_profit <= 0 && (
+              <p className="text-xs mt-3" style={{ color: "var(--m-muted)" }}>
+                Sin ganancia neta — el desglose se mostrará en cero hasta que las ventas superen los gastos cancelados.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {view === "history" && (
+        <div>
+          {positiveMonths.length === 0 ? (
+            <div className="text-center py-12 rounded-sm" style={{ background: "var(--m-sidebar)" }}>
+              <p className="text-sm" style={{ color: "var(--m-ink-2)" }}>Aún no hay movimientos para mostrar.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={positiveMonths} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
+                    <CartesianGrid stroke="#EFEBE3" vertical={false} />
+                    <XAxis dataKey="month" tickFormatter={formatMonthLabel} stroke="#A39891"
+                      tick={{ fontSize: 11, fontFamily: "IBM Plex Mono" }} axisLine={false} tickLine={false} />
+                    <YAxis stroke="#A39891" tick={{ fontSize: 11, fontFamily: "IBM Plex Mono" }}
+                      axisLine={false} tickLine={false} tickFormatter={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+                    <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E6E2DA", borderRadius: 4, fontSize: 12 }}
+                      formatter={(v) => formatCRC(v)} labelFormatter={formatMonthLabel} />
+                    <Bar dataKey="sales" fill="#4A7C6F" name="Ingresos" radius={[2,2,0,0]} />
+                    <Bar dataKey="expenses" fill="#9C4936" name="Gastos" radius={[2,2,0,0]} />
+                    <Bar dataKey="net" fill="#2C2420" name="Neto" radius={[2,2,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr style={{ borderBottom: "1px solid var(--m-border)" }}>
+                    <th className="eyebrow py-3 px-3 text-left">Mes</th>
+                    <th className="eyebrow py-3 px-3 text-right">Ingresos</th>
+                    <th className="eyebrow py-3 px-3 text-right">Gastos</th>
+                    <th className="eyebrow py-3 px-3 text-right">Neto</th>
+                    <th className="eyebrow py-3 px-3 text-right">Salario 10%</th>
+                    <th className="eyebrow py-3 px-3 text-right">Fondos 20%</th>
+                    <th className="eyebrow py-3 px-3 text-right">Reinv. 70%</th>
+                  </tr></thead>
+                  <tbody>
+                    {[...positiveMonths].reverse().map(m => (
+                      <tr key={m.month} style={{ borderBottom: "1px solid var(--m-border)" }}>
+                        <td className="py-2.5 px-3 text-sm">{formatMonthLabel(m.month)}</td>
+                        <td className="py-2.5 px-3 mono text-right" style={{ color: "#4A7C6F" }}>{formatCRC(m.sales)}</td>
+                        <td className="py-2.5 px-3 mono text-right" style={{ color: "#9C4936" }}>{formatCRC(m.expenses)}</td>
+                        <td className="py-2.5 px-3 mono text-right font-medium"
+                          style={{ color: m.net >= 0 ? "var(--m-ink)" : "#C0392B" }}>{formatCRC(m.net)}</td>
+                        <td className="py-2.5 px-3 mono text-right text-xs" style={{ color: "#4A7C6F" }}>{formatCRC(m.salary_10)}</td>
+                        <td className="py-2.5 px-3 mono text-right text-xs" style={{ color: "#8A9A83" }}>{formatCRC(m.funds_20)}</td>
+                        <td className="py-2.5 px-3 mono text-right text-xs" style={{ color: "#9C4936" }}>{formatCRC(m.reinvest_70)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {currentMonth && (
+                <div className="mt-3 text-xs" style={{ color: "var(--m-ink-2)" }}>
+                  Mes en curso: {formatMonthLabel(currentMonth.month)} · neto {formatCRC(currentMonth.net)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BalanceTile({ label, value, color, Icon, bold, negative }) {
+  return (
+    <div className="rounded-sm p-4" style={{ border: "1px solid var(--m-border)" }}>
+      <div className="flex items-center gap-1.5 mb-2">
+        {Icon && <Icon className="w-3.5 h-3.5" style={{ color }} />}
+        <div className="eyebrow" style={{ fontSize: 9 }}>{label}</div>
+      </div>
+      <div className="font-mono tracking-tight" style={{ color, fontSize: bold ? 22 : 18, fontWeight: bold ? 600 : 400 }}>
+        {negative && value > 0 ? "−" : ""}{formatCRC(value)}
       </div>
     </div>
   );
