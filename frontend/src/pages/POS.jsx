@@ -3,7 +3,79 @@ import { api, formatCRC, formatDateTime } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-import { Search, Plus, Minus, Trash2, UserPlus, Coffee, Check, FileText, X } from "lucide-react";
+import { Search, Plus, Minus, Trash2, UserPlus, Coffee, Check, FileText, X, CalendarPlus } from "lucide-react";
+
+export function downloadDeliveryICS(order, client) {
+  const date = (order.delivery_date || "").trim();
+  const time = (order.delivery_time || "").trim();
+  if (!date) return false;
+  const [y, m, d] = date.split("-").map(Number);
+  let hh = 0, mm = 0;
+  if (time) {
+    const parts = time.split(":").map(Number);
+    hh = parts[0] || 0;
+    mm = parts[1] || 0;
+  }
+  const start = new Date(y, (m || 1) - 1, d || 1, hh, mm, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const fmtLocal = (dt) =>
+    `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
+  const fmtUtc = (dt) =>
+    `${dt.getUTCFullYear()}${pad(dt.getUTCMonth() + 1)}${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}${pad(dt.getUTCMinutes())}00Z`;
+
+  const allDay = !time;
+  const items = (order.items || [])
+    .map((it) => `${it.product_name} x${it.quantity}`)
+    .join(", ");
+  const location = (order.delivery_location || client?.location || "").replace(/[\n,;]/g, " ");
+  const clientName = order.client_name || client?.business_name || "Cliente";
+  const phone = client?.phone ? ` · Tel ${client.phone}` : "";
+  const escape = (s) =>
+    String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+
+  const nextDay = new Date(y, (m || 1) - 1, (d || 1) + 1);
+  const fmtDateOnly = (dt) => `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}`;
+  const dtStart = allDay
+    ? `DTSTART;VALUE=DATE:${fmtDateOnly(start)}`
+    : `DTSTART:${fmtLocal(start)}`;
+  const dtEnd = allDay
+    ? `DTEND;VALUE=DATE:${fmtDateOnly(nextDay)}`
+    : `DTEND:${fmtLocal(end)}`;
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Manino Coffee CRM//ES",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:${order.id}@manino-crm`,
+    `DTSTAMP:${fmtUtc(new Date())}`,
+    dtStart,
+    dtEnd,
+    `SUMMARY:${escape(`Entrega · ${clientName}`)}`,
+    location ? `LOCATION:${escape(location)}` : "",
+    `DESCRIPTION:${escape(`Cliente: ${clientName}${phone}\nProductos: ${items}\nTotal: ₡${order.total}${order.notes ? `\nNotas: ${order.notes}` : ""}`)}`,
+    "BEGIN:VALARM",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Entrega Manino",
+    "TRIGGER:-PT1H",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter(Boolean);
+
+  const blob = new Blob([lines.join("\r\n")], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `entrega-${clientName.replace(/\s+/g, "_").toLowerCase()}-${date}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
 
 export function generateInvoicePDF(order, client) {
   const logoUrl = `${window.location.origin}/logo.png`;
@@ -159,6 +231,9 @@ export default function POS() {
   const [delivery, setDelivery] = useState("pendiente"); // pendiente | entregado
   const [payment, setPayment] = useState("no_cobrado");  // pagado | no_cobrado
   const [notes, setNotes] = useState("");
+  const [deliveryLocation, setDeliveryLocation] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [deliveryTime, setDeliveryTime] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [invoicePrompt, setInvoicePrompt] = useState(null); // {order, client} | null
 
@@ -227,12 +302,17 @@ export default function POS() {
         status: delivery,
         paid: payment === "pagado",
         notes,
+        delivery_location: deliveryLocation.trim(),
+        delivery_date: deliveryDate,
+        delivery_time: deliveryTime,
       });
       toast.success("Compra registrada · inventario actualizado");
       const order = r.data;
       const client = clients.find(c => c.id === clientId);
       setInvoicePrompt({ order, client });
-      setCart([]); setNotes(""); await load();
+      setCart([]); setNotes("");
+      setDeliveryLocation(""); setDeliveryDate(""); setDeliveryTime("");
+      await load();
     } catch (e) { toast.error(e.response?.data?.detail || "Error al crear pedido"); }
     finally { setSubmitting(false); }
   };
@@ -425,6 +505,30 @@ export default function POS() {
                 </div>
               </F>
               <F label="Notas (opcional)"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="m-input resize-none" /></F>
+
+              <div className="pt-2" style={{ borderTop: "1px dashed var(--m-border)" }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <CalendarPlus className="w-3.5 h-3.5" style={{ color: "var(--m-terracotta)" }} />
+                  <div className="eyebrow" style={{ fontSize: 9 }}>Entrega (opcional)</div>
+                </div>
+                <div className="space-y-3">
+                  <F label="Lugar de entrega">
+                    <input className="m-input" value={deliveryLocation}
+                      onChange={e => setDeliveryLocation(e.target.value)}
+                      placeholder="Ej: Casa cliente, Plaza del café…" />
+                  </F>
+                  <div className="grid grid-cols-2 gap-3">
+                    <F label="Fecha">
+                      <input type="date" className="m-input" value={deliveryDate}
+                        onChange={e => setDeliveryDate(e.target.value)} />
+                    </F>
+                    <F label="Hora">
+                      <input type="time" className="m-input" value={deliveryTime}
+                        onChange={e => setDeliveryTime(e.target.value)} />
+                    </F>
+                  </div>
+                </div>
+              </div>
             </div>
             <button onClick={confirmPurchase} disabled={submitting || cart.length === 0 || !clientId}
               className="mt-5 w-full py-3 rounded-sm text-sm font-medium text-white disabled:opacity-50" style={{ background: "var(--m-terracotta)" }}>
@@ -453,6 +557,17 @@ export default function POS() {
               Se abrirá la factura en una pestaña nueva. Desde ahí podés descargar como PDF, imprimir o solo verla.
             </p>
             <div className="space-y-2">
+              {invoicePrompt?.order?.delivery_date && (
+                <button
+                  onClick={() => {
+                    const ok = downloadDeliveryICS(invoicePrompt.order, invoicePrompt.client);
+                    if (ok) toast.success("Archivo .ics descargado · abrilo para agregar al calendario");
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-sm text-sm font-medium border"
+                  style={{ borderColor: "var(--m-terracotta)", color: "var(--m-terracotta)", background: "#FFF" }}>
+                  <CalendarPlus className="w-4 h-4" /> Agregar a Calendario
+                </button>
+              )}
               <button onClick={handleGenerateInvoice}
                 className="w-full py-2.5 rounded-sm text-sm font-medium text-white" style={{ background: "var(--m-terracotta)" }}>
                 Generar factura PDF

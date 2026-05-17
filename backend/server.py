@@ -93,11 +93,15 @@ class OrderItem(BaseModel):
 
 
 class OrderIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     client_id: str
     items: List[OrderItemIn]
     status: OrderStatus = "pendiente"
     paid: bool = False
     notes: Optional[str] = ""
+    delivery_location: Optional[str] = ""
+    delivery_date: Optional[str] = ""  # YYYY-MM-DD
+    delivery_time: Optional[str] = ""  # HH:MM (24h)
 
 
 class Order(BaseModel):
@@ -112,6 +116,9 @@ class Order(BaseModel):
     notes: Optional[str] = ""
     created_at: str
     delivered_at: Optional[str] = None
+    delivery_location: Optional[str] = ""
+    delivery_date: Optional[str] = ""
+    delivery_time: Optional[str] = ""
 
 
 class OrderStatusUpdate(BaseModel):
@@ -458,6 +465,9 @@ async def create_order(payload: OrderIn):
         "status": payload.status, "paid": payload.paid, "paid_at": paid_at,
         "notes": payload.notes or "", "created_at": created,
         "delivered_at": created if payload.status == "entregado" else None,
+        "delivery_location": (payload.delivery_location or "").strip(),
+        "delivery_date": (payload.delivery_date or "").strip(),
+        "delivery_time": (payload.delivery_time or "").strip(),
     }
     await db.orders.insert_one(order_doc.copy())
     for it in enriched_items:
@@ -1020,6 +1030,120 @@ async def delete_supplier_order(order_id: str):
 @api_router.get("/supplier-orders/recommendation")
 async def supplier_order_recommendation(product_id: str, coverage_days: int = 14):
     return await _recommend_qty(product_id, coverage_days=coverage_days)
+
+
+# ---- Reporte semanal ----
+CR_OFFSET = timedelta(hours=-6)  # Costa Rica UTC-6
+
+
+def _cr_now() -> datetime:
+    return datetime.now(timezone.utc).astimezone(timezone(CR_OFFSET))
+
+
+def _week_range_cr(reference: Optional[datetime] = None) -> tuple[datetime, datetime, str, str]:
+    """Devuelve (start_utc, end_utc, start_label, end_label) para la semana lun-dom en CR."""
+    ref = reference or _cr_now()
+    # weekday(): lunes=0 ... domingo=6
+    monday_cr = (ref - timedelta(days=ref.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    sunday_cr = monday_cr + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    return (
+        monday_cr.astimezone(timezone.utc),
+        sunday_cr.astimezone(timezone.utc),
+        monday_cr.date().isoformat(),
+        sunday_cr.date().isoformat(),
+    )
+
+
+@api_router.get("/reports/weekly")
+async def weekly_report(start: Optional[str] = None, end: Optional[str] = None):
+    """Reporte semanal: ingresos (pedidos pagados), gastos cancelados, neto, desglose 10/20/70.
+    Si no se pasa start/end, usa lun-dom de la semana en curso (CR)."""
+    if start and end:
+        start_dt = _parse_date_any(start)
+        end_dt = _parse_date_any(end)
+        if not start_dt or not end_dt:
+            raise HTTPException(400, "Fechas inválidas")
+        # Ajustar end al final del día
+        end_dt = end_dt.replace(hour=23, minute=59, second=59)
+        start_label = start_dt.date().isoformat()
+        end_label = end_dt.date().isoformat()
+        start_utc = start_dt.astimezone(timezone.utc)
+        end_utc = end_dt.astimezone(timezone.utc)
+    else:
+        start_utc, end_utc, start_label, end_label = _week_range_cr()
+
+    start_iso = start_utc.isoformat()
+    end_iso = end_utc.isoformat()
+
+    # Ingresos: pedidos pagados con paid_at en el rango (o created_at si no hay paid_at)
+    orders = await db.orders.find({"paid": True}, PROJECTION).to_list(100000)
+    income_total = 0.0
+    daily = {(start_utc + timedelta(days=i)).date().isoformat(): {"income": 0.0, "expense": 0.0}
+             for i in range(7)}
+    income_orders = []
+    for o in orders:
+        ref_str = o.get("paid_at") or o.get("created_at")
+        if not ref_str:
+            continue
+        dt = _parse_iso(ref_str)
+        if start_utc <= dt <= end_utc:
+            amount = float(o.get("total", 0))
+            income_total += amount
+            day = dt.astimezone(timezone(CR_OFFSET)).date().isoformat()
+            if day in daily:
+                daily[day]["income"] += amount
+            income_orders.append({
+                "id": o["id"],
+                "client_name": o.get("client_name", ""),
+                "total": amount,
+                "at": ref_str,
+            })
+
+    # Gastos cancelados con fecha efectiva en el rango
+    expenses = await db.expenses.find({"status": "cancelado"}, PROJECTION).to_list(100000)
+    expense_total = 0.0
+    expense_items = []
+    for e in expenses:
+        dt = _expense_effective_dt(e)
+        if start_utc <= dt <= end_utc:
+            amount = float(e.get("amount", 0))
+            expense_total += amount
+            day = dt.astimezone(timezone(CR_OFFSET)).date().isoformat()
+            if day in daily:
+                daily[day]["expense"] += amount
+            expense_items.append({
+                "id": e["id"],
+                "description": e.get("description", ""),
+                "category": e.get("category", ""),
+                "amount": amount,
+                "at": e.get("date") or e.get("created_at"),
+            })
+
+    net = income_total - expense_total
+    positive = max(0.0, net)
+    daily_series = [
+        {"date": d, "income": round(v["income"], 2), "expense": round(v["expense"], 2),
+         "net": round(v["income"] - v["expense"], 2)}
+        for d, v in sorted(daily.items())
+    ]
+
+    return {
+        "start": start_label,
+        "end": end_label,
+        "income_total": round(income_total, 2),
+        "expense_total": round(expense_total, 2),
+        "net_profit": round(net, 2),
+        "breakdown": {
+            "salary_10": round(positive * 0.10, 2),
+            "funds_20": round(positive * 0.20, 2),
+            "reinvest_70": round(positive * 0.70, 2),
+        },
+        "daily": daily_series,
+        "orders_count": len(income_orders),
+        "expenses_count": len(expense_items),
+        "income_orders": sorted(income_orders, key=lambda x: x["at"], reverse=True),
+        "expense_items": sorted(expense_items, key=lambda x: x["at"] or "", reverse=True),
+    }
 
 
 @api_router.get("/")

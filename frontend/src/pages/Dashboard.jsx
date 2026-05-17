@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, formatCRC, formatDate } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
-import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from "recharts";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Coffee, AlertTriangle, AlertCircle, Target, Edit3, Check, X, TrendingUp, TrendingDown, Wallet } from "lucide-react";
+import { ArrowUpRight, Coffee, AlertTriangle, AlertCircle, Target, Edit3, Check, X, TrendingUp, TrendingDown, Wallet, FileBarChart, CalendarDays } from "lucide-react";
 
 const Kpi = ({ label, value, hint }) => (
   <div className="card-base p-6 hover-card">
@@ -134,6 +134,9 @@ export default function Dashboard() {
           balance={balance}
           monthly={monthly_balance}
         />
+
+        {/* Reporte semanal */}
+        <WeeklyReportSection />
 
         {/* Alerta morosos */}
         {morosos.length > 0 && (
@@ -470,6 +473,206 @@ function BalanceTile({ label, value, color, Icon, bold, negative }) {
       <div className="font-mono tracking-tight" style={{ color, fontSize: bold ? 22 : 18, fontWeight: bold ? 600 : 400 }}>
         {negative && value > 0 ? "−" : ""}{formatCRC(value)}
       </div>
+    </div>
+  );
+}
+
+function WeeklyReportSection() {
+  const isSunday = useMemo(() => new Date().getDay() === 0, []);
+  const [report, setReport] = useState(null);
+  const [open, setOpen] = useState(isSunday);
+  const [loading, setLoading] = useState(false);
+
+  const fetchReport = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get("/reports/weekly");
+      setReport(r.data);
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isSunday) fetchReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSunday]);
+
+  const formatDateLong = (iso) => {
+    if (!iso) return "";
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("es-CR", { day: "2-digit", month: "short" });
+  };
+
+  const dayLabel = (iso) => {
+    if (!iso) return "";
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("es-CR", { weekday: "short", day: "2-digit" });
+  };
+
+  return (
+    <div className="card-base p-6" style={isSunday ? { borderColor: "var(--m-terracotta)", borderWidth: 2 } : undefined}>
+      <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <FileBarChart className="w-4 h-4" style={{ color: "var(--m-terracotta)" }} />
+            <div className="eyebrow">Reporte semanal</div>
+            {isSunday && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-sm font-medium"
+                style={{ background: "var(--m-terracotta)", color: "#FFF" }}>
+                <CalendarDays className="w-3 h-3" /> Domingo · cierre de semana
+              </span>
+            )}
+          </div>
+          <h2 className="font-serif text-2xl">Resumen de la semana</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--m-ink-2)" }}>
+            Lunes a domingo de la semana en curso. Solo informativo — no ejecuta pagos.
+            {report && (
+              <span className="ml-1 font-mono">
+                {formatDateLong(report.start)} → {formatDateLong(report.end)}
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {open && report && (
+            <button onClick={() => setOpen(false)}
+              className="px-3 py-1.5 text-xs rounded-sm border"
+              style={{ borderColor: "var(--m-border)", color: "var(--m-ink-2)" }}>
+              Ocultar
+            </button>
+          )}
+          <button onClick={fetchReport} disabled={loading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-sm text-sm font-medium text-white disabled:opacity-50"
+            style={{ background: "var(--m-terracotta)" }}>
+            <FileBarChart className="w-4 h-4" />
+            {loading ? "Cargando…" : (report ? "Actualizar" : "Generar Reporte")}
+          </button>
+        </div>
+      </div>
+
+      {open && report && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <BalanceTile label="Ingresos semana" value={report.income_total} color="#4A7C6F" Icon={TrendingUp} />
+            <BalanceTile label="Gastos semana" value={report.expense_total} color="#9C4936" Icon={TrendingDown} negative />
+            <BalanceTile
+              label="Ganancia neta"
+              value={report.net_profit}
+              color={report.net_profit >= 0 ? "#2C2420" : "#C0392B"}
+              Icon={Wallet}
+              bold
+            />
+            <div className="rounded-sm p-4" style={{ border: "1px solid var(--m-border)" }}>
+              <div className="eyebrow mb-2" style={{ fontSize: 9 }}>Volumen</div>
+              <div className="text-sm">
+                <div className="font-mono">{report.orders_count} pedido{report.orders_count !== 1 ? "s" : ""}</div>
+                <div className="font-mono text-xs mt-0.5" style={{ color: "var(--m-ink-2)" }}>
+                  {report.expenses_count} gasto{report.expenses_count !== 1 ? "s" : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="rounded-sm p-5" style={{ background: "var(--m-sidebar)", border: "1px solid var(--m-border)" }}>
+              <div className="eyebrow mb-3">Desglose 10 / 20 / 70 sobre neto</div>
+              {report.net_profit > 0 ? (
+                <div className="space-y-3">
+                  {[
+                    { label: "Salario (10%)", value: report.breakdown.salary_10, color: "#4A7C6F", pct: 10 },
+                    { label: "Fondos (20%)", value: report.breakdown.funds_20, color: "#8A9A83", pct: 20 },
+                    { label: "Reinversión (70%)", value: report.breakdown.reinvest_70, color: "#9C4936", pct: 70 },
+                  ].map(b => (
+                    <div key={b.label}>
+                      <div className="flex items-baseline justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: b.color }} />
+                          <span className="text-sm">{b.label}</span>
+                        </div>
+                        <span className="font-mono text-sm font-medium" style={{ color: b.color }}>
+                          {formatCRC(b.value)}
+                        </span>
+                      </div>
+                      <div className="h-1 w-full" style={{ background: "#EFEBE3" }}>
+                        <div className="h-1" style={{ width: `${b.pct}%`, background: b.color }} />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] mt-3" style={{ color: "var(--m-muted)" }}>
+                    Cálculo informativo · este reporte no mueve dinero ni registra movimientos.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm" style={{ color: "var(--m-ink-2)" }}>
+                  Sin ganancia neta en la semana — el desglose 10/20/70 se mostrará cuando los ingresos superen a los gastos cancelados.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <div className="eyebrow mb-3">Movimiento diario</div>
+              <div style={{ width: "100%", height: 220 }}>
+                <ResponsiveContainer>
+                  <BarChart data={report.daily} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
+                    <CartesianGrid stroke="#EFEBE3" vertical={false} />
+                    <XAxis dataKey="date" tickFormatter={dayLabel} stroke="#A39891"
+                      tick={{ fontSize: 10, fontFamily: "IBM Plex Mono" }} axisLine={false} tickLine={false} />
+                    <YAxis stroke="#A39891" tick={{ fontSize: 10, fontFamily: "IBM Plex Mono" }}
+                      axisLine={false} tickLine={false}
+                      tickFormatter={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k` : v)} />
+                    <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E6E2DA", borderRadius: 4, fontSize: 12 }}
+                      formatter={(v) => formatCRC(v)} labelFormatter={dayLabel} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="income" name="Ingresos" fill="#4A7C6F" radius={[2,2,0,0]} />
+                    <Bar dataKey="expense" name="Gastos" fill="#9C4936" radius={[2,2,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr style={{ borderBottom: "1px solid var(--m-border)" }}>
+                <th className="eyebrow py-2.5 px-3 text-left">Día</th>
+                <th className="eyebrow py-2.5 px-3 text-right">Ingresos</th>
+                <th className="eyebrow py-2.5 px-3 text-right">Gastos</th>
+                <th className="eyebrow py-2.5 px-3 text-right">Neto</th>
+              </tr></thead>
+              <tbody>
+                {report.daily.map(d => (
+                  <tr key={d.date} style={{ borderBottom: "1px solid var(--m-border)" }}>
+                    <td className="py-2 px-3 text-sm">{dayLabel(d.date)}</td>
+                    <td className="py-2 px-3 mono text-right" style={{ color: "#4A7C6F" }}>{formatCRC(d.income)}</td>
+                    <td className="py-2 px-3 mono text-right" style={{ color: "#9C4936" }}>{formatCRC(d.expense)}</td>
+                    <td className="py-2 px-3 mono text-right font-medium"
+                      style={{ color: d.net >= 0 ? "var(--m-ink)" : "#C0392B" }}>{formatCRC(d.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: "var(--m-sidebar)" }}>
+                  <td className="py-2.5 px-3 eyebrow">Total</td>
+                  <td className="py-2.5 px-3 mono text-right font-medium" style={{ color: "#4A7C6F" }}>{formatCRC(report.income_total)}</td>
+                  <td className="py-2.5 px-3 mono text-right font-medium" style={{ color: "#9C4936" }}>{formatCRC(report.expense_total)}</td>
+                  <td className="py-2.5 px-3 mono text-right font-medium"
+                    style={{ color: report.net_profit >= 0 ? "var(--m-ink)" : "#C0392B" }}>{formatCRC(report.net_profit)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {open && !report && !loading && (
+        <div className="text-center py-10 rounded-sm" style={{ background: "var(--m-sidebar)" }}>
+          <p className="text-sm" style={{ color: "var(--m-ink-2)" }}>
+            Pulsá <span className="font-medium">Generar Reporte</span> para ver el resumen de la semana en curso.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
