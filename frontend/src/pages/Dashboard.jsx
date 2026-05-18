@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, formatCRC, formatDate } from "@/lib/api";
 import PageHeader from "@/components/PageHeader";
 import { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from "recharts";
@@ -483,7 +483,7 @@ function WeeklyReportSection() {
   const [open, setOpen] = useState(isSunday);
   const [loading, setLoading] = useState(false);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     setLoading(true);
     try {
       const r = await api.get("/reports/weekly");
@@ -492,12 +492,11 @@ function WeeklyReportSection() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isSunday) fetchReport();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSunday]);
+  }, [isSunday, fetchReport]);
 
   const formatDateLong = (iso) => {
     if (!iso) return "";
